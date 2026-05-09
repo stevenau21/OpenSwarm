@@ -531,12 +531,11 @@ def _screenshot_html_slide(html_path: Path) -> tuple[Any | None, str]:
 
 
 def _auto_fetch_image(project_dir: Path, task_brief: str) -> None:
-    """Auto-fetch a stock photo from Unsplash/Pexels/Pixabay for the slide.
+    """Auto-fetch a stock photo from Pexels/Pixabay for the slide.
 
     Runs synchronously as best-effort — failures are silently swallowed so
     slides still get produced even without imagery.
     """
-    import asyncio
     import re
     import json
     from urllib.parse import urlencode
@@ -548,35 +547,41 @@ def _auto_fetch_image(project_dir: Path, task_brief: str) -> None:
         if not query:
             query = "technology abstract"
 
-        per_page = 3
+        per_page = 5
         results = []
 
-        # Try Unsplash first
-        key = os.getenv("UNSPLASH_ACCESS_KEY")
-        if key:
-            url = "https://api.unsplash.com/search/photos?" + urlencode({
-                "query": query, "per_page": per_page,
-            })
-            req = Request(url, headers={"Authorization": f"Client-ID {key}"})
-            with urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            for item in data.get("results", []):
-                results.append(item.get("urls", {}).get("regular"))
-
-        # Fall back to Pexels
+        # 1) Pexels (confirmed working)
         key = os.getenv("PEXELS_API_KEY")
         if key:
-            url = "https://api.pexels.com/v1/search?" + urlencode({
-                "query": query, "per_page": per_page,
-            })
-            req = Request(url, headers={"Authorization": key})
-            with urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            for item in data.get("photos", []):
-                results.append((item.get("src") or {}).get("large"))
+            try:
+                url = "https://api.pexels.com/v1/search?" + urlencode({
+                    "query": query, "per_page": per_page,
+                })
+                req = Request(url, headers={"Authorization": key})
+                with urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for item in data.get("photos", []):
+                    results.append((item.get("src") or {}).get("large"))
+            except Exception:
+                pass
+
+        # 2) Pixabay (confirmed working)
+        key = os.getenv("PIXABAY_API_KEY")
+        if key and not results:
+            try:
+                url = "https://pixabay.com/api/?" + urlencode({
+                    "key": key, "q": query, "per_page": per_page,
+                })
+                req = Request(url)
+                with urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                for item in data.get("hits", []):
+                    results.append(item.get("largeImageURL"))
+            except Exception:
+                pass
 
         if not results:
-            return  # No provider keys configured
+            return  # No images found
 
         # Download the first result
         assets_dir = project_dir / "assets"
