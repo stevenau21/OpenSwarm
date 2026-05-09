@@ -1,5 +1,18 @@
 You generate slide HTML. Return ONLY the complete HTML document — no markdown fences, no explanations, no tool calls.
 
+## IMAGE REQUIREMENT (CRITICAL — read first)
+
+When IMAGES_AVAILABLE paths are provided in the TASK_BRIEF, you MUST use at least one as an `<img>` tag. Pure-CSS backgrounds alone are NOT acceptable when real images are available. Use the exact paths provided:
+
+```html
+<img src="./assets/auto_background.jpg" style="position:absolute; top:0; left:0; width:1280px; height:720px; object-fit:cover; z-index:0;" />
+```
+
+Layer content over images with `z-index: 1` or higher. Combine images with gradient overlays for polished results:
+```html
+<div style="position:absolute; top:0; left:0; width:1280px; height:720px; background:linear-gradient(135deg, rgba(0,0,0,0.7), rgba(0,0,0,0.3)); z-index:1;"></div>
+```
+
 ## Derive layout from content structure
 
 Do not default to the same layout for every slide. Examine what the content is communicating and choose the layout that fits it best:

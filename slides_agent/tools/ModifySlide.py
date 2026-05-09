@@ -310,15 +310,21 @@ def _make_html_writer_agent(tool=None) -> "tuple[Agent, bool]":
         from agents import OpenAIResponsesModel
         from openai import AsyncOpenAI
         caller_client = tool and _get_caller_openai_client(tool)
-        client = AsyncOpenAI(
-            api_key=caller_client.api_key,
-            base_url=str(caller_client.base_url),
-        ) if caller_client else AsyncOpenAI()
-        is_codex = bool(caller_client and not str(caller_client.base_url).startswith("https://api.openai.com"))
-        if is_codex:
-            model = _CodexResponsesModel(model=_HTML_WRITER_MODEL_OAI, openai_client=client)
+        if caller_client:
+            client = AsyncOpenAI(
+                api_key=caller_client.api_key,
+                base_url=str(caller_client.base_url),
+            )
+            is_codex = not str(caller_client.base_url).startswith("https://api.openai.com")
+            if is_codex:
+                model = _CodexResponsesModel(model=_HTML_WRITER_MODEL_OAI, openai_client=client)
+            else:
+                model = OpenAIResponsesModel(model=_HTML_WRITER_MODEL_OAI, openai_client=client)
         else:
-            model = OpenAIResponsesModel(model=_HTML_WRITER_MODEL_OAI, openai_client=client)
+            # No caller client — fall back to LiteLLM → Ollama Cloud
+            from agency_swarm import LitellmModel
+            fallback_model = os.getenv("DEFAULT_MODEL", _HTML_WRITER_MODEL_OAI)
+            model = LitellmModel(model=fallback_model)
     agent = Agent(
         name="Slide HTML Writer",
         description="Generates complete slide HTML from task briefs.",
@@ -521,6 +527,72 @@ def _screenshot_html_slide(html_path: Path) -> tuple[Any | None, str]:
         return None, str(exc)
 
 
+def _auto_fetch_image(project_dir: Path, task_brief: str) -> None:
+    """Auto-fetch a stock photo from Unsplash/Pexels/Pixabay for the slide.
+
+    Runs synchronously as best-effort — failures are silently swallowed so
+    slides still get produced even without imagery.
+    """
+    import asyncio
+    import re
+    import json
+    from urllib.parse import urlencode
+    from urllib.request import Request, urlopen
+
+    try:
+        # Derive a search query from the task_brief
+        query = " ".join(re.findall(r'[A-Z][a-z]+|[a-z]{4,}', task_brief))[:80]
+        if not query:
+            query = "technology abstract"
+
+        per_page = 3
+        results = []
+
+        # Try Unsplash first
+        key = os.getenv("UNSPLASH_ACCESS_KEY")
+        if key:
+            url = "https://api.unsplash.com/search/photos?" + urlencode({
+                "query": query, "per_page": per_page,
+            })
+            req = Request(url, headers={"Authorization": f"Client-ID {key}"})
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for item in data.get("results", []):
+                results.append(item.get("urls", {}).get("regular"))
+
+        # Fall back to Pexels
+        key = os.getenv("PEXELS_API_KEY")
+        if key:
+            url = "https://api.pexels.com/v1/search?" + urlencode({
+                "query": query, "per_page": per_page,
+            })
+            req = Request(url, headers={"Authorization": key})
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            for item in data.get("photos", []):
+                results.append((item.get("src") or {}).get("large"))
+
+        if not results:
+            return  # No provider keys configured
+
+        # Download the first result
+        assets_dir = project_dir / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        img_url = results[0]
+        ext = ".jpg"
+        if ".png" in img_url.lower():
+            ext = ".png"
+        elif ".webp" in img_url.lower():
+            ext = ".webp"
+
+        dest = assets_dir / f"auto_background{ext}"
+        req = Request(img_url, headers={"User-Agent": "OpenSwarm-OllamaFork/1.0"})
+        with urlopen(req, timeout=20) as resp:
+            dest.write_bytes(resp.read())
+
+        print(f"[auto-fetch] Downloaded: {dest.name} for query '{query}'")
+    except Exception:
+        pass  # Best-effort — never block slide generation
 
 
 class ModifySlide(BaseTool):
@@ -563,6 +635,27 @@ class ModifySlide(BaseTool):
         total_pages = len([p for p in project_dir.glob("*.html")])
         theme_css = _read_theme_css(project_dir)
         main_text_contents = _build_main_text_contents(project_dir, slide_filename)
+
+        # ── AUTO-FETCH: pre-load a stock photo before HTML generation ──────
+        # Original workflow: main agent runs ImageSearch → DownloadImage first.
+        # Ollama/LiteLLM models often skip this. We handle it internally so the
+        # HTML writer always has real imagery to work with.
+        assets_dir = project_dir / "assets"
+        existing_images = list(assets_dir.glob("*")) if assets_dir.exists() else []
+        if not existing_images:
+            _auto_fetch_image(project_dir, self.task_brief)
+        # Re-read available images after auto-fetch
+        fresh_images = sorted(
+            [p for p in assets_dir.glob("*") if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")],
+            key=lambda p: p.stat().st_mtime, reverse=True
+        ) if assets_dir.exists() else []
+        # Inject image path hints into the task_brief so the HTML writer can reference them
+        if fresh_images:
+            img_hints = "\n\nIMAGES_AVAILABLE (use these exact paths in img src attributes):\n"
+            for p in fresh_images[:3]:
+                img_hints += f"  ./assets/{p.name}\n"
+            self.task_brief = self.task_brief + img_hints
+        # ───────────────────────────────────────────────────────────────────
 
         writer, is_codex = _make_html_writer_agent(tool=self)
 

@@ -33,6 +33,7 @@ from .template_registry import load_template_index
 
 _PLANNER_MODEL_CLAUDE = "anthropic/claude-sonnet-4-6"
 _PLANNER_MODEL_OAI = "gpt-5.3-codex"
+_PLANNER_MODEL_OLLAMA_FALLBACK = None  # resolved lazily from DEFAULT_MODEL env
 
 
 class _PlanSlide(BaseModel):
@@ -136,19 +137,20 @@ def _make_planner_agent(tool=None) -> "tuple[Agent, bool]":
         from openai import AsyncOpenAI
         caller_client = tool and _get_caller_openai_client(tool)
         if caller_client:
-            # Create a fresh client with the same credentials — the caller's client is
-            # bound to FastAPI's event loop and cannot be reused in asyncio.run() threads.
             client = AsyncOpenAI(
                 api_key=caller_client.api_key,
                 base_url=str(caller_client.base_url),
             )
+            is_codex = not str(caller_client.base_url).startswith("https://api.openai.com")
+            if is_codex:
+                model = _CodexResponsesModel(model=_PLANNER_MODEL_OAI, openai_client=client)
+            else:
+                model = OpenAIResponsesModel(model=_PLANNER_MODEL_OAI, openai_client=client)
         else:
-            client = AsyncOpenAI()
-        is_codex = bool(caller_client and not str(caller_client.base_url).startswith("https://api.openai.com"))
-        if is_codex:
-            model = _CodexResponsesModel(model=_PLANNER_MODEL_OAI, openai_client=client)
-        else:
-            model = OpenAIResponsesModel(model=_PLANNER_MODEL_OAI, openai_client=client)
+            # No caller client — fall back to LiteLLM → Ollama Cloud
+            from agency_swarm import LitellmModel
+            fallback_model = os.getenv("DEFAULT_MODEL", _PLANNER_MODEL_OAI)
+            model = LitellmModel(model=fallback_model)
     agent = Agent(
         name="Slide Planner",
         description="Creates structured slide outline plans.",

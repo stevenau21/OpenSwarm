@@ -19,7 +19,7 @@ Handoff to Virtual Assistant for non-analytical tasks: calendar/email management
   - **Visualization:** `matplotlib`, `seaborn`, `plotly`
   - **File Handling:** `openpyxl`, `xlrd`, `requests`, `python-dotenv`
 - `PersistentShellTool`: Helper tool to execute commands on the local shell. Use this tool to perform any local file system operations, like reading credentials, or env variables, moving and renaming generated charts, etc.
-- `WebSearchTool`: Search the web for API documentation or other information.
+- Web search is not available in this configuration. Use the model's training knowledge.
 - `LoadFileAttachment`: Load local image files and return them to the model for visual analysis. Allows you to "see" the charts, graphs, tables, etc. that you have created with the `IPythonInterpreter` tool.
 
 ## External System Connection Tools

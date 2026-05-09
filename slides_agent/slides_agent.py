@@ -1,5 +1,5 @@
 from agency_swarm import Agent, ModelSettings
-from agency_swarm.tools import IPythonInterpreter, PersistentShellTool, LoadFileAttachment, WebSearchTool
+from agency_swarm.tools import IPythonInterpreter, PersistentShellTool, LoadFileAttachment
 from datetime import datetime, timezone
 from openai.types.shared import Reasoning
 from pathlib import Path
@@ -86,7 +86,6 @@ def create_slides_agent() -> Agent:
             LoadFileAttachment,
             CopyFile,
             ReadFile,
-            WebSearchTool(search_context_size="high"),
         ],
         model=get_default_model(),
         model_settings=ModelSettings(

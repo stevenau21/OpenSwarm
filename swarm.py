@@ -1,6 +1,50 @@
 import os
 from dotenv import load_dotenv
-from agents import set_tracing_disabled, set_tracing_export_api_key
+
+# ── Kill tracing BEFORE anything imports `agents.tracing` ───────────────────
+# The OpenAI Agents SDK creates a background exporter thread that phones
+# api.openai.com regardless of set_tracing_disabled(). We monkey-patch
+# get_trace_provider() to return a no-op so no HTTP calls ever happen.
+import agents.tracing.setup as _tracing_setup
+import agents.tracing.provider as _tracing_provider
+from agents.tracing.spans import NoOpSpan
+from agents.tracing.traces import NoOpTrace
+
+class _NoOpTraceProvider(_tracing_provider.TraceProvider):
+    """Provider that never creates traces/spans or starts exporter threads."""
+    def register_processor(self, processor): pass
+    def set_processors(self, processors): pass
+    def get_current_trace(self): return None
+    def get_current_span(self): return None
+    def set_disabled(self, disabled: bool): pass
+    def time_iso(self):
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
+    def gen_trace_id(self):
+        import uuid
+        return f"trace_{uuid.uuid4().hex}"
+    def gen_span_id(self):
+        import uuid
+        return f"span_{uuid.uuid4().hex[:24]}"
+    def gen_group_id(self):
+        import uuid
+        return f"group_{uuid.uuid4().hex[:24]}"
+    def create_trace(self, name, trace_id=None, group_id=None, metadata=None, disabled=False, tracing=None):
+        return NoOpTrace()
+    def create_span(self, span_data, span_id=None, parent=None, disabled=False):
+        return NoOpSpan(span_data)
+    def shutdown(self): pass
+
+_noop = _NoOpTraceProvider()
+_tracing_setup.get_trace_provider = lambda: _noop
+# Override the module-level caches too
+_tracing_setup.GLOBAL_TRACE_PROVIDER = _noop
+
+# Also nuke the set_tracing* functions so nothing tries to reconfigure
+import agents.tracing as _tracing
+_tracing.set_tracing_disabled = lambda disabled: None
+_tracing.set_tracing_export_api_key = lambda api_key: None
+
 from patches.patch_agency_swarm_dual_comms import apply_dual_comms_patch
 from patches.patch_file_attachment_refs import apply_file_attachment_reference_patch
 from patches.patch_ipython_interpreter_composio import apply_ipython_composio_context_patch
@@ -12,12 +56,6 @@ apply_utf8_file_read_patch()
 apply_dual_comms_patch()
 apply_file_attachment_reference_patch()
 apply_ipython_composio_context_patch()
-
-_tracing_key = os.getenv("OPENAI_API_KEY")
-if _tracing_key:
-    set_tracing_export_api_key(_tracing_key)
-else:
-    set_tracing_disabled(True)
 
 
 def create_agency(load_threads_callback=None):

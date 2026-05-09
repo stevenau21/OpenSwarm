@@ -2,7 +2,6 @@ import os
 from agency_swarm import Agent, ModelSettings
 from openai.types.shared.reasoning import Reasoning
 from agency_swarm.tools import (
-    WebSearchTool,
     PersistentShellTool,
     IPythonInterpreter,
     LoadFileAttachment,
@@ -22,7 +21,7 @@ def create_data_analyst() -> Agent:
         tools_folder=os.path.join(current_dir, "tools"),
         model=get_default_model(),
         tools=[
-            WebSearchTool(),
+            
             PersistentShellTool,
             IPythonInterpreter,
             LoadFileAttachment,

@@ -1,6 +1,5 @@
 from agency_swarm import Agent, ModelSettings
 from agency_swarm.tools import (
-    WebSearchTool,
     PersistentShellTool,
     IPythonInterpreter,
 )
@@ -29,7 +28,7 @@ def create_virtual_assistant() -> Agent:
             response_include=["web_search_call.action.sources"] if is_openai_provider() else None,
         ),
         tools=[
-            WebSearchTool(),
+            
             PersistentShellTool,
             IPythonInterpreter,
             CopyFile,
