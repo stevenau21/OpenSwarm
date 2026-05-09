@@ -150,6 +150,9 @@ def _make_planner_agent(tool=None) -> "tuple[Agent, bool]":
             # No caller client — fall back to LiteLLM → Ollama Cloud
             from agency_swarm import LitellmModel
             fallback_model = os.getenv("DEFAULT_MODEL", _PLANNER_MODEL_OAI)
+            # Strip litellm/ prefix if present — LitellmModel adds its own
+            if fallback_model.startswith("litellm/"):
+                fallback_model = fallback_model[len("litellm/"):]
             model = LitellmModel(model=fallback_model)
     agent = Agent(
         name="Slide Planner",
