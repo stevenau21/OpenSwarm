@@ -335,7 +335,7 @@ def _make_html_writer_agent(tool=None) -> "tuple[Agent, bool]":
         tools=[],
         model=model,
         model_settings=ModelSettings(
-            reasoning=Reasoning(effort="high", summary="auto"),
+            reasoning=None,  # Disabled — Reasoning objects crash LiteLLM → Ollama
             verbosity="medium",
             store=False if is_codex else None,
         ),
